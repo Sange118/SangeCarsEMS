@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sange Cars EMS — Emergency Dashboard</title>
+
+  <!-- Leaflet.js (free maps) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    :root {
+      --bg:      #080c10;
+      --panel:   #0b1118;
+      --border:  #1a3a5c;
+      --accent:  #00d4ff;
+      --green:   #00ff88;
+      --red:     #ff4444;
+      --warn:    #ffcc00;
+      --text:    #c8e6f5;
+      --muted:   #3a6a8a;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── HEADER ── */
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .header-left h1 {
+      font-family: 'Orbitron', monospace;
+      font-size: 16px;
+      color: var(--accent);
+      letter-spacing: 2px;
+    }
+
+    .header-left p {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 11px;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.5s infinite;
+      margin-right: 6px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    #clock { color: var(--accent); font-size: 13px; }
+
+    /* ── MAIN LAYOUT ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 340px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-family: 'Orbitron', monospace;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge {
+      background: var(--red);
+      color: white;
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    .badge.green { background: var(--green); color: #000; }
+
+    #accident-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    #accident-list::-webkit-scrollbar { width: 4px; }
+    #accident-list::-webkit-scrollbar-track { background: var(--bg); }
+    #accident-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .accident-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--red);
+      border-radius: 2px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .accident-card:hover { border-color: var(--accent); background: #0d1520; }
+    .accident-card.resolved { border-left-color: var(--green); opacity: 0.6; }
+    .accident-card.selected { border-color: var(--accent); background: #0d1a26; }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .card-vehicle {
+      font-family: 'Orbitron', monospace;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 1px;
+    }
+
+    .card-status {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      background: var(--red);
+      color: white;
+    }
+
+    .card-status.resolved { background: var(--green); color: #000; }
+
+    .card-row {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    .card-row span { color: var(--text); }
+
+    .card-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 5px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.2s;
+      letter-spacing: 1px;
+    }
+
+    .btn:hover { background: var(--dim); border-color: var(--accent); color: var(--accent); }
+    .btn.resolve { border-color: var(--green); color: var(--green); }
+    .btn.resolve:hover { background: var(--green); color: #000; }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 2;
+    }
+
+    /* ── MAP ── */
+    #map {
+      flex: 1;
+      background: #0a0e14;
+    }
+
+    /* ── DETAIL PANEL ── */
+    .detail-panel {
+      width: 300px;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .detail-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-family: 'Orbitron', monospace;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 2px;
+    }
+
+    .detail-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .detail-section {
+      margin-bottom: 16px;
+    }
+
+    .detail-section-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 8px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+      padding: 4px 0;
+      border-bottom: 1px solid #0d1a26;
+    }
+
+    .detail-row .label { color: var(--muted); }
+    .detail-row .value { color: var(--text); text-align: right; max-width: 160px; word-break: break-all; }
+    .detail-row .value.red { color: var(--red); }
+    .detail-row .value.green { color: var(--green); }
+    .detail-row .value.warn { color: var(--warn); }
+
+    .maps-btn {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      cursor: pointer;
+      border-radius: 2px;
+      text-align: center;
+      text-decoration: none;
+      margin-top: 8px;
+      transition: all 0.2s;
+      letter-spacing: 1px;
+    }
+
+    .maps-btn:hover { background: var(--accent); color: #000; }
+
+    .no-selection {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 2;
+    }
+
+    /* ── STATS BAR ── */
+    .stats-bar {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 8px 20px;
+      display: flex;
+      gap: 30px;
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .stat { display: flex; align-items: center; gap: 8px; }
+    .stat-label { color: var(--muted); }
+    .stat-value { color: var(--accent); font-family: 'Orbitron', monospace; font-size: 12px; }
+    .stat-value.red { color: var(--red); }
+    .stat-value.green { color: var(--green); }
+
+    /* ── NEW ALERT POPUP ── */
+    .alert-popup {
+      position: fixed;
+      top: 70px;
+      right: 20px;
+      background: #1a0000;
+      border: 1px solid var(--red);
+      border-left: 4px solid var(--red);
+      padding: 14px 18px;
+      z-index: 9999;
+      max-width: 280px;
+      display: none;
+      animation: slideIn 0.3s ease;
+      box-shadow: 0 0 30px rgba(255,68,68,0.3);
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to   { transform: translateX(0);   opacity: 1; }
+    }
+
+    .alert-popup-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 10px;
+      color: var(--red);
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+
+    .alert-popup-body { font-size: 11px; color: var(--text); line-height: 1.8; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-left">
+    <h1>⚡ SANGE CARS EMS</h1>
+    <p>ACCIDENT DETECTION & EMERGENCY RESPONSE DASHBOARD</p>
+  </div>
+  <div class="header-right">
+    <div><span class="status-dot"></span>SYSTEM ONLINE</div>
+    <div><span class="status-dot"></span>FIREBASE CONNECTED</div>
+    <div id="clock">--:--:--</div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- SIDEBAR — Accident List -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      ACTIVE INCIDENTS
+      <span class="badge" id="active-count">0</span>
+    </div>
+    <div id="accident-list">
+      <div class="empty-state">
+        No accidents detected.<br>
+        System is monitoring...<br><br>
+        🟢 All clear
+      </div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map"></div>
+
+  <!-- DETAIL PANEL -->
+  <div class="detail-panel">
+    <div class="detail-header">INCIDENT DETAILS</div>
+    <div class="detail-body" id="detail-body">
+      <div class="no-selection">
+        Select an incident<br>from the list to<br>view details
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- STATS BAR -->
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-label">TOTAL INCIDENTS</div>
+    <div class="stat-value" id="stat-total">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">ACTIVE</div>
+    <div class="stat-value red" id="stat-active">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">RESOLVED</div>
+    <div class="stat-value green" id="stat-resolved">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">AVG G-FORCE</div>
+    <div class="stat-value" id="stat-gforce">0.0G</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">LAST INCIDENT</div>
+    <div class="stat-value" id="stat-last">--</div>
+  </div>
+</div>
+
+<!-- NEW ALERT POPUP -->
+<div class="alert-popup" id="alert-popup">
+  <div class="alert-popup-title">🚨 NEW ACCIDENT DETECTED</div>
+  <div class="alert-popup-body" id="alert-popup-body"></div>
+</div>
+
+<script>
+  // ── FIREBASE CONFIG ──────────────────────────────────────────
+  const firebaseConfig = {
+    apiKey:            "AIzaSyA2z2obR26KZYH61CseBwvFK3tUsJe3jE4",
+    authDomain:        "accident-detection-syste-9eb45.firebaseapp.com",
+    projectId:         "accident-detection-syste-9eb45",
+    storageBucket:     "accident-detection-syste-9eb45.firebasestorage.app",
+    messagingSenderId: "855246253211",
+    appId:             "1:855246253211:web:a1cbdabb98e0ea8c772a3e",
+    databaseURL:       "https://accident-detection-syste-9eb45-default-rtdb.firebaseio.com"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const database = firebase.database();
+
+  // ── MAP SETUP ────────────────────────────────────────────────
+  const map = L.map('map').setView([5.6037, -0.1870], 12); // Accra, Ghana
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+
+  // Custom accident marker icon
+  const accidentIcon = L.divIcon({
+    html: '<div style="background:#ff4444;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 10px #ff4444;"></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    className: ''
+  });
+
+  const hospitalIcon = L.divIcon({
+    html: '<div style="background:#00ff88;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 10px #00ff88;"></div>',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    className: ''
+  });
+
+  // ── STATE ────────────────────────────────────────────────────
+  let accidents        = {};
+  let markers          = {};
+  let routeLayers      = {};
+  let hospitalMarkers  = {};
+  let selectedKey      = null;
+  let knownKeys        = new Set();
+
+  // ── CLOCK ────────────────────────────────────────────────────
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toUTCString().split(' ')[4] + ' UTC';
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── SHOW ALERT POPUP ─────────────────────────────────────────
+  function showAlertPopup(accident) {
+    const popup = document.getElementById('alert-popup');
+    document.getElementById('alert-popup-body').innerHTML =
+      `Vehicle: <b>${accident.vehicle}</b><br>
+       Plate: <b>${accident.plate}</b><br>
+       G-Force: <b>${accident.gforce}G</b><br>
+       Time: <b>${accident.time}</b>`;
+    popup.style.display = 'block';
+    setTimeout(() => popup.style.display = 'none', 6000);
+  }
+
+  // ── RENDER ACCIDENT CARD ──────────────────────────────────────
+  function renderAccidentList() {
+    const list    = document.getElementById('accident-list');
+    const keys    = Object.keys(accidents);
+    let   active  = 0;
+    let   resolved = 0;
+    let   totalG  = 0;
+
+    if (keys.length === 0) {
+      list.innerHTML = `<div class="empty-state">No accidents detected.<br>System is monitoring...<br><br>🟢 All clear</div>`;
+      updateStats(0, 0, 0, 0);
+      return;
+    }
+
+    // Sort newest first
+    keys.sort((a, b) => {
+      const ta = accidents[a].timestamp || '';
+      const tb = accidents[b].timestamp || '';
+      return tb.localeCompare(ta);
+    });
+
+    list.innerHTML = '';
+
+    keys.forEach(key => {
+      const a = accidents[key];
+      if (a.status === 'ACTIVE')   active++;
+      if (a.status === 'RESOLVED') resolved++;
+      totalG += parseFloat(a.gforce || 0);
+
+      const card = document.createElement('div');
+      card.className = `accident-card ${a.status === 'RESOLVED' ? 'resolved' : ''} ${selectedKey === key ? 'selected' : ''}`;
+      card.innerHTML = `
+        <div class="card-header">
+          <div class="card-vehicle">${a.vehicle || 'Unknown'}</div>
+          <div class="card-status ${a.status === 'RESOLVED' ? 'resolved' : ''}">${a.status}</div>
+        </div>
+        <div class="card-row">Plate: <span>${a.plate || '--'}</span></div>
+        <div class="card-row">G-Force: <span>${parseFloat(a.gforce || 0).toFixed(2)}G</span></div>
+        <div class="card-row">Time: <span>${a.time || '--'}</span></div>
+        <div class="card-row">Date: <span>${a.date || '--'}</span></div>
+        <div class="card-row">Hospital: <span>${a.hospital?.name || '--'}</span></div>
+        <div class="card-row">ETA: <span>${a.route?.duration_min || '--'} min (${a.route?.distance_km || '--'} km)</span></div>
+        <div class="card-actions">
+          <button class="btn" onclick="focusAccident('${key}')">📍 VIEW</button>
+          ${a.status === 'ACTIVE' ? `<button class="btn resolve" onclick="resolveAccident('${key}')">✅ RESOLVE</button>` : ''}
+        </div>
+      `;
+      list.appendChild(card);
+    });
+
+    const avgG = keys.length > 0 ? (totalG / keys.length).toFixed(1) : 0;
+    updateStats(keys.length, active, resolved, avgG);
+
+    document.getElementById('active-count').textContent = active;
+    document.getElementById('active-count').className   = active > 0 ? 'badge' : 'badge green';
+  }
+
+  // ── UPDATE STATS BAR ─────────────────────────────────────────
+  function updateStats(total, active, resolved, avgG) {
+    document.getElementById('stat-total').textContent    = total;
+    document.getElementById('stat-active').textContent   = active;
+    document.getElementById('stat-resolved').textContent = resolved;
+    document.getElementById('stat-gforce').textContent   = avgG + 'G';
+  }
+
+  // ── FOCUS ON ACCIDENT ON MAP ──────────────────────────────────
+  function focusAccident(key) {
+    selectedKey = key;
+    const a     = accidents[key];
+
+    if (a.lat && a.lng) {
+      map.flyTo([a.lat, a.lng], 15);
+    }
+
+    // Draw route on map if available
+    if (routeLayers[key]) {
+      map.removeLayer(routeLayers[key]);
+    }
+
+    if (a.route?.coordinates?.length > 0) {
+      const latLngs = a.route.coordinates.map(c => [c[1], c[0]]);
+      routeLayers[key] = L.polyline(latLngs, {
+        color: '#00d4ff',
+        weight: 4,
+        opacity: 0.8,
+        dashArray: '8, 4'
+      }).addTo(map);
+    }
+
+    // Show detail panel
+    showDetail(key);
+    renderAccidentList();
+  }
+
+  // ── SHOW DETAIL PANEL ────────────────────────────────────────
+  function showDetail(key) {
+    const a    = accidents[key];
+    const body = document.getElementById('detail-body');
+
+    body.innerHTML = `
+      <div class="detail-section">
+        <div class="detail-section-title">VEHICLE INFO</div>
+        <div class="detail-row"><span class="label">Vehicle</span><span class="value">${a.vehicle || '--'}</span></div>
+        <div class="detail-row"><span class="label">Plate</span><span class="value">${a.plate || '--'}</span></div>
+        <div class="detail-row"><span class="label">Status</span><span class="value ${a.status === 'ACTIVE' ? 'red' : 'green'}">${a.status}</span></div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title">IMPACT DATA</div>
+        <div class="detail-row"><span class="label">G-Force</span><span class="value red">${parseFloat(a.gforce || 0).toFixed(2)}G</span></div>
+        <div class="detail-row"><span class="label">Date</span><span class="value">${a.date || '--'}</span></div>
+        <div class="detail-row"><span class="label">Time</span><span class="value">${a.time || '--'}</span></div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title">LOCATION</div>
+        <div class="detail-row"><span class="label">Latitude</span><span class="value">${a.lat || '--'}</span></div>
+        <div class="detail-row"><span class="label">Longitude</span><span class="value">${a.lng || '--'}</span></div>
+        <a class="maps-btn" href="${a.maps_link}" target="_blank">🗺 OPEN IN GOOGLE MAPS</a>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title">EMERGENCY RESPONSE</div>
+        <div class="detail-row"><span class="label">Hospital</span><span class="value green">${a.hospital?.name || '--'}</span></div>
+        <div class="detail-row"><span class="label">Distance</span><span class="value warn">${a.route?.distance_km || '--'} km</span></div>
+        <div class="detail-row"><span class="label">ETA</span><span class="value warn">${a.route?.duration_min || '--'} min</span></div>
+      </div>
+    `;
+  }
+
+  // ── RESOLVE ACCIDENT ─────────────────────────────────────────
+  function resolveAccident(key) {
+    fetch(`http://localhost:5000/api/accident/${key}/resolve`, { method: 'POST' })
+      .then(r => r.json())
+      .then(() => console.log('Resolved'))
+      .catch(e => console.error(e));
+  }
+
+  // ── ADD MARKER TO MAP ────────────────────────────────────────
+  function addMarker(key, a) {
+    if (!a.lat || !a.lng) return;
+
+    // Remove old marker if exists
+    if (markers[key]) map.removeLayer(markers[key]);
+
+    markers[key] = L.marker([a.lat, a.lng], { icon: accidentIcon })
+      .addTo(map)
+      .bindPopup(`
+        <b>${a.vehicle}</b><br>
+        Plate: ${a.plate}<br>
+        G-Force: ${a.gforce}G<br>
+        ${a.time}
+      `);
+
+    // Hospital marker
+    if (a.hospital?.lat && a.hospital?.lng) {
+      if (hospitalMarkers[key]) map.removeLayer(hospitalMarkers[key]);
+      hospitalMarkers[key] = L.marker([a.hospital.lat, a.hospital.lng], { icon: hospitalIcon })
+        .addTo(map)
+        .bindPopup(`🏥 ${a.hospital.name}`);
+    }
+  }
+
+  // ── FIREBASE LISTENER ────────────────────────────────────────
+  database.ref('/accidents').on('value', snapshot => {
+    const data = snapshot.val() || {};
+
+    // Detect new accidents
+    Object.keys(data).forEach(key => {
+      if (!knownKeys.has(key) && data[key].status === 'ACTIVE') {
+        showAlertPopup(data[key]);
+        document.getElementById('stat-last').textContent = data[key].time || '--';
+
+        // Auto-focus first accident
+        if (Object.keys(accidents).length === 0) {
+          setTimeout(() => focusAccident(key), 500);
+        }
+      }
+      knownKeys.add(key);
+      addMarker(key, data[key]);
+    });
+
+    accidents = data;
+    renderAccidentList();
+
+    // Refresh selected detail
+    if (selectedKey && accidents[selectedKey]) {
+      showDetail(selectedKey);
+    }
+  });
+</script>
+</body>
+</html>
