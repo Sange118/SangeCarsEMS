@@ -18,11 +18,19 @@ app = Flask(__name__)
 CORS(app)
 
 # ─── FIREBASE SETUP ──────────────────────────────────────────────
-cred = credentials.Certificate("serviceAccountKey.json")
+import os
+import json
+
+# Load Firebase credentials from environment variable or local file
+firebase_creds = os.environ.get('FIREBASE_CREDENTIALS')
+if firebase_creds:
+    cred = credentials.Certificate(json.loads(firebase_creds))
+else:
+    cred = credentials.Certificate("serviceAccountKey.json")
+
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://accident-detection-syste-9eb45-default-rtdb.firebaseio.com'
 })
-
 # ─── HELPER: Find nearest hospital using Nominatim (FREE) ────────
 def find_nearest_hospital(lat, lng):
     try:
