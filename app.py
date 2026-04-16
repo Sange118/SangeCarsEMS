@@ -6,22 +6,19 @@
 ================================================================
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import requests
 import firebase_admin
 from firebase_admin import credentials, db
 from datetime import datetime
+import os
 import json
 
 app = Flask(__name__)
 CORS(app)
 
 # ─── FIREBASE SETUP ──────────────────────────────────────────────
-import os
-import json
-
-# Load Firebase credentials from environment variable or local file
 firebase_creds = os.environ.get('FIREBASE_CREDENTIALS')
 if firebase_creds:
     cred = credentials.Certificate(json.loads(firebase_creds))
@@ -31,6 +28,7 @@ else:
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://accident-detection-syste-9eb45-default-rtdb.firebaseio.com'
 })
+
 # ─── HELPER: Find nearest hospital using Nominatim (FREE) ────────
 def find_nearest_hospital(lat, lng):
     try:
@@ -54,7 +52,7 @@ def find_nearest_hospital(lat, lng):
             }
     except Exception as e:
         print(f"[Nominatim Error] {e}")
-    return {"name": "Hospital (GPS unavailable)", "lat": lat, "lng": lng}
+    return {"name": "Hospital (location unavailable)", "lat": lat, "lng": lng}
 
 # ─── HELPER: Get fastest route using OSRM (FREE) ─────────────────
 def get_fastest_route(from_lat, from_lng, to_lat, to_lng):
@@ -86,14 +84,13 @@ def receive_accident():
         if not data:
             return jsonify({"status": "error", "message": "No data received"}), 400
 
-        # Extract fields from Arduino POST request
         vehicle  = data.get("vehicle",  "Unknown Vehicle")
         plate    = data.get("plate",    "Unknown Plate")
         lat      = float(data.get("lat",  0))
         lng      = float(data.get("lng",  0))
         gforce   = float(data.get("gforce", 0))
-        acc_time = data.get("time",     datetime.utcnow().strftime("%H:%M:%S UTC"))
-        acc_date = data.get("date",     datetime.utcnow().strftime("%d/%m/%Y"))
+        acc_time = data.get("time",  datetime.utcnow().strftime("%H:%M:%S UTC"))
+        acc_date = data.get("date",  datetime.utcnow().strftime("%d/%m/%Y"))
 
         print(f"\n[ACCIDENT] {vehicle} | {plate} | G={gforce} | {lat},{lng}")
 
@@ -101,7 +98,7 @@ def receive_accident():
         hospital = find_nearest_hospital(lat, lng)
         print(f"[HOSPITAL] {hospital['name']}")
 
-        # Get fastest route from hospital to accident
+        # Get fastest route from hospital to accident scene
         route = get_fastest_route(
             hospital["lat"], hospital["lng"],
             lat, lng
@@ -110,32 +107,32 @@ def receive_accident():
 
         # Build accident record
         accident_record = {
-            "vehicle":       vehicle,
-            "plate":         plate,
-            "lat":           lat,
-            "lng":           lng,
-            "gforce":        gforce,
-            "time":          acc_time,
-            "date":          acc_date,
-            "timestamp":     datetime.utcnow().isoformat(),
-            "status":        "ACTIVE",
-            "hospital":      hospital,
-            "route":         route,
-            "maps_link":     f"https://maps.google.com/?q={lat},{lng}"
+            "vehicle":    vehicle,
+            "plate":      plate,
+            "lat":        lat,
+            "lng":        lng,
+            "gforce":     gforce,
+            "time":       acc_time,
+            "date":       acc_date,
+            "timestamp":  datetime.utcnow().isoformat(),
+            "status":     "ACTIVE",
+            "hospital":   hospital,
+            "route":      route,
+            "maps_link":  f"https://maps.google.com/?q={lat},{lng}"
         }
 
-        # Push to Firebase Realtime Database
+        # Save to Firebase
         ref = db.reference("/accidents")
         new_ref = ref.push(accident_record)
         print(f"[FIREBASE] Saved with key: {new_ref.key}")
 
         return jsonify({
-            "status":    "success",
-            "message":   "Accident recorded",
-            "key":       new_ref.key,
-            "hospital":  hospital["name"],
-            "route_km":  route["distance_km"],
-            "eta_min":   route["duration_min"]
+            "status":   "success",
+            "message":  "Accident recorded",
+            "key":      new_ref.key,
+            "hospital": hospital["name"],
+            "route_km": route["distance_km"],
+            "eta_min":  route["duration_min"]
         }), 200
 
     except Exception as e:
@@ -171,9 +168,7 @@ def health():
         "version": "1.0"
     }), 200
 
-# ─── SERVE DASHBOARD ─────────────────────────────────────────────
-from flask import render_template
-
+# ─── SERVE DASHBOARD ──────────────────────────────────────────────
 @app.route('/dashboard')
 def dashboard():
     return render_template('dashboard.html')
