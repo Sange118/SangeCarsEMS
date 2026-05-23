@@ -76,10 +76,14 @@ def get_fastest_route(from_lat, from_lng, to_lat, to_lng):
     return {"distance_km": 0, "duration_min": 0, "coordinates": []}
 
 # ─── MAIN ENDPOINT: Receive accident report ──────────────────────
-@app.route('/api/accident', methods=['POST'])
+@app.route('/api/accident', methods=['POST', 'GET'])
 def receive_accident():
+    # Allow GET for quick health/wake check
+    if request.method == 'GET':
+        return jsonify({"status": "ready"}), 200
+
     try:
-        data = request.get_json()
+        data = request.get_json(force=True, silent=True)
 
         if not data:
             return jsonify({"status": "error", "message": "No data received"}), 400
@@ -94,15 +98,21 @@ def receive_accident():
 
         print(f"\n[ACCIDENT] {vehicle} | {plate} | G={gforce} | {lat},{lng}")
 
-        # Find nearest hospital
-        hospital = find_nearest_hospital(lat, lng)
+        # Find nearest hospital — with fallback if it times out
+        try:
+            hospital = find_nearest_hospital(lat, lng)
+        except Exception:
+            hospital = {"name": "Nearest Hospital", "lat": lat, "lng": lng}
         print(f"[HOSPITAL] {hospital['name']}")
 
-        # Get fastest route from hospital to accident scene
-        route = get_fastest_route(
-            hospital["lat"], hospital["lng"],
-            lat, lng
-        )
+        # Get fastest route — with fallback if it times out
+        try:
+            route = get_fastest_route(
+                hospital["lat"], hospital["lng"],
+                lat, lng
+            )
+        except Exception:
+            route = {"distance_km": 0, "duration_min": 0, "coordinates": []}
         print(f"[ROUTE] {route['distance_km']}km | {route['duration_min']}min")
 
         # Build accident record
